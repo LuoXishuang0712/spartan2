@@ -4,6 +4,8 @@ import scipy as sci
 import scipy.stats as ss
 import scipy.sparse.linalg as slin
 import copy
+
+from ...tensor.graph import Graph
 from .mytools.MinTree import MinTree
 from scipy.sparse import coo_matrix, csr_matrix, lil_matrix
 from .mytools.ioutil import loadedge2sm
@@ -598,14 +600,14 @@ class HoloScopeOpt:
             for jr in range(len(rows)):
                 r = rows[jr]
                 if ui[r] <= rbdrow:
-                    break
+                    break  # jr eq.s the index of u (where U truncated as U^~)
             self.avgexponents.append(math.log(jr, self.nU))
-            if self.nU > 5e5:
+            if self.nU > 5e5:  # ultra wide graph optimization
                 e0=self.e0
                 ep = max(eps, 2.0/(3-e0))
                 nn = self.nU + self.nV
                 nlimit = int(math.ceil(nn**(1.0/ep)))
-                cutrows = rows[:min(jr,nlimit)]
+                cutrows = rows[:min(jr,nlimit)]  # almost jr
             else:
                 cutrows = rows[:jr]
             for jc in range(len(cols)):
@@ -895,7 +897,7 @@ class HoloScope( DMmodel ):
         Default is 32.
     '''
     def __init__(self, graph, **params):
-        self.graph = graph
+        self.graph: Graph = graph
         self.alg = param_default(params, 'alg', 'fastgreedy')
         self.eps = param_default(params, 'eps', 1.6)
         self.numSing = param_default(params, 'numSing', 10)

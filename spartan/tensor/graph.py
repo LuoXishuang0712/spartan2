@@ -49,7 +49,7 @@ class Graph:
         If mode is None, and other invalidation, then None is returned.
         '''
         if self.nprop == 1 and mode == 3:
-            return graph_tensor
+            return self.graph_tensor
         elif self.nprop > 1 and mode is not None and\
                 mode < self.nprop + 2:
             return STensor((self.graph_tensor.coords[(0, 1, mode), :],
