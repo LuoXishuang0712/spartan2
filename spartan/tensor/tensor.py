@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed
 import pdb
+from typing import Union
 
 
 class TensorData:
@@ -69,7 +70,7 @@ class TensorData:
                 attr.iloc[:, i] = colind
         return attr.to_numpy(), value.to_numpy()
 
-    def log_to_time(self, time_col: int or list = 0, group_col: int or list = 1, val_col: int or list = None, format: str = '%Y-%m-%d %H:%M:%S', bins: int = 10, range: tuple = None, inplace: bool = False):
+    def log_to_time(self, time_col: Union[int, list] = 0, group_col: Union[int, list] = 1, val_col: Union[int, list] = None, format: str = '%Y-%m-%d %H:%M:%S', bins: int = 10, range: tuple = None, inplace: bool = False):
         """ Transfer log data to time series data.
 
         Parameters:
@@ -122,7 +123,7 @@ class TensorData:
         else:
             return _ans
 
-    def to_aggts(self, data, time_col: int = 0, group_col: int or list = 1, inplace: bool = False):
+    def to_aggts(self, data, time_col: int = 0, group_col: Union[int, list] = 1, inplace: bool = False):
         aggts = {} # final dict list for aggregating time series.
         for row in data:
             if len(group_col) == 1:

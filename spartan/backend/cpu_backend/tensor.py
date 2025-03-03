@@ -5,6 +5,7 @@ import numpy as np
 import scipy.sparse as ssp
 from scipy import signal
 import sparse
+from typing import Union
 
 
 def _ensure_array(x):
@@ -456,7 +457,7 @@ class DTensor(np.lib.mixins.NDArrayOperatorsMixin):
             return resampled_data
 
     @_wrap_ret
-    def concatenate(self, tensor: "DTensor" or np.ndarray, axis: int = 0, inplace: bool = False):
+    def concatenate(self, tensor: Union["DTensor", np.ndarray], axis: int = 0, inplace: bool = False):
         """Concatenate DTensors together.
 
         Parameters
