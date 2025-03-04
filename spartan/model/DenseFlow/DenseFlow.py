@@ -83,12 +83,12 @@ class DenseFlow( DMmodel ):
         accumulated_data_count = 0  # data count in historical slots
         left_2d_index, right_2d_index = 0, 0
         range_value = []
-        slot_value = [i[self.value_index - 2] * self.value_scaler for i, _ in self.timeslots[cur_slot_index]]
+        slot_value = [i[self.value_index - 2] * self.value_scaler for i in self.timeslots[cur_slot_index]]
         while cur_data_index < len(self.timeorder_datas):
             if cur_data_index - accumulated_data_count >= len(self.timeslots[cur_slot_index]):
-                accumulated_data_count += self.timeslots[cur_slot_index]
+                accumulated_data_count += len(self.timeslots[cur_slot_index])
                 cur_slot_index += 1
-                slot_value = [i[self.value_index - 2] * self.value_scaler for i, _ in self.timeslots[cur_slot_index]]
+                slot_value = [i[self.value_index - 2] * self.value_scaler for i in self.timeslots[cur_slot_index]]
             datas, cur_timestamp = self.timeorder_datas[cur_data_index]
 
             # adjust left 2d index scaler
@@ -100,19 +100,25 @@ class DenseFlow( DMmodel ):
                     continue
                 break
             while True:
+                if right_2d_index >= len(self.timeorder_datas) - 1:
+                    break
                 datas, target_timestamp = self.timeorder_datas[right_2d_index]
-                if target_timestamp - cur_data_index < 2 * 24 * 60 * 60:
+                if target_timestamp - cur_timestamp < 2 * 24 * 60 * 60:
                     right_2d_index += 1
                     range_value.append(datas[self.value_index - 2] * self.value_scaler)
                     continue
                 break
-
-            result.append(sum(range_value) / sum(slot_value))
+            
+            if len(slot_value) == 0 or sum(slot_value) == 0:
+                result.append(0)
+            else:
+                result.append(sum(range_value) / sum(slot_value))
+            cur_data_index += 1
         self.R_list = np.array(result, dtype=np.float32)
 
     def __build_data_array(self):
         value_list = []
-        for _, row in self.tensor.data.iterrows:
+        for _, row in self.tensor.data.iterrows():
             _, _, *datas = row
             value = datas[self.value_index - 2] * self.value_scaler
             value_list.append(value)
@@ -120,7 +126,7 @@ class DenseFlow( DMmodel ):
     
     def __build_search_index(self):
         current_search_index = len(self.search_list)
-        for idx, row in self.tensor.data.iterrows:
+        for idx, row in self.tensor.data.iterrows():
             f, t, *datas = row
             if self.search_mat[f, t] == -1:
                 self.search_list.append([(datas, idx)])
@@ -132,12 +138,12 @@ class DenseFlow( DMmodel ):
             self.search_list[last_index].append((datas, idx))
         assert not ((self.adj == 0) ^ (self.search_mat == -1)).any(), "The adjency mat does not match the search mat"
 
-        zero_point = np.zeros(self.nodes_cnt)
-        self.burst_point_index = np.zeros(self.nodes_cnt)
-        self.awakening_point_1st_index = np.zeros(self.nodes_cnt)
+        zero_point = np.zeros(self.nodes_cnt, dtype=np.int32)
+        self.burst_point_index = np.zeros(self.nodes_cnt, dtype=np.int32)
+        self.awakening_point_1st_index = np.zeros(self.nodes_cnt, dtype=np.int32)
         self.delta_c_am_milti_s_am = np.zeros(self.nodes_cnt)
         self.ta_tm_indicator = np.zeros(self.nodes_cnt)
-        for f_idx in range(self.nodes_cnt):
+        for f_idx in range(self.nodes_cnt):  # FIXME a slow loop here
             l_idx_list = self.search_mat[f_idx].tolist()
             this_tx_list = []
             for l_idx in l_idx_list:
@@ -145,16 +151,20 @@ class DenseFlow( DMmodel ):
                     continue
                 this_tx_list.extend(self.search_list[l_idx])
             this_tx_list.sort(key=lambda x: x[1])
+            if len(this_tx_list) <= 1:
+                continue
             value_list = np.array([i[self.value_index - 2] for i, _ in this_tx_list])
             ts_list = np.array([datetime.datetime.strptime(i[self.datetime_index - 2], self.timeformat).timestamp() for i, _ in this_tx_list])
             self.burst_point_index[f_idx] = np.argmax(value_list)
 
             c_0, c_m = value_list[zero_point[f_idx]], value_list[self.burst_point_index[f_idx]]
             t_0, t_m = ts_list[zero_point[f_idx]], ts_list[self.burst_point_index[f_idx]]
+            if zero_point[f_idx] == self.burst_point_index[f_idx] or c_0 == c_m or t_0 == t_m:
+                continue
             self.awakening_point_1st_index[f_idx] = np.argmax(
                 np.abs(
-                    (c_m - c_0) * ts_list[zero_point[f_idx]:self.burst_point_index[f_idx]] - 
-                    (t_m - t_0) * value_list[zero_point[f_idx]:self.burst_point_index[f_idx]] + 
+                    (c_m - c_0) * ts_list[zero_point[f_idx]:self.burst_point_index[f_idx] + 1] - 
+                    (t_m - t_0) * value_list[zero_point[f_idx]:self.burst_point_index[f_idx] + 1] + 
                     t_m * c_0 - c_m * t_0
                     ) / 
                 np.sqrt((c_m - c_0) ** 2 + (t_m - t_0) ** 2)
@@ -166,7 +176,7 @@ class DenseFlow( DMmodel ):
 
     def __build_timeslot_sequence(self):
         data_list = []
-        for og_index, row in self.tensor.data.iterrows:
+        for og_index, row in self.tensor.data.iterrows():
             _, _, *datas = row
             dt = datas[self.datetime_index - 2]
             ts = int(datetime.datetime.strptime(dt, self.timeformat).timestamp())
@@ -212,29 +222,40 @@ class DenseFlow( DMmodel ):
             else:
                 update_index_list = list(range(int(max(*self.adj.shape))))
         update_index_list = np.array(update_index_list)  # K = len(update_index_list)
+        update_index_list_expand = np.zeros(self.nodes_cnt, dtype=np.bool8)
+        update_index_list_expand[update_index_list] = True
 
         related_nodes = self.adj[:, update_index_list].T
         # topological suspiciousness
-        t1 = related_nodes * self.value_array[0][self.search_mat]
+        t1 = related_nodes @ self.value_array[0][self.search_mat]
         E_k_i = np.sum(t1, axis=1)
-        E_j_i = np.sum(t1 * self.subset_indicator, axis=1)
+        E_j_i = np.sum(t1[:, (self.subset_indicator == 1)], axis=1)
+        E_k_i[E_k_i == 0] = E_j_i[E_k_i == 0]
         alpha = E_j_i / E_k_i
 
         # temporal suspiciousness
-        fi_T_i_V = np.sum(related_nodes * self.delta_c_am_milti_s_am * (self.burst_point_index * related_nodes - self.awakening_point_1st_index * related_nodes + 1), axis=1)
-        fi_T_i_S = np.sum(related_nodes * self.delta_c_am_milti_s_am * (self.burst_point_index * related_nodes - self.awakening_point_1st_index * related_nodes + 1) * self.subset_indicator, axis=1)
+        fi_T_i_V = np.sum((related_nodes * self.delta_c_am_milti_s_am) * ((self.burst_point_index * related_nodes) - (self.awakening_point_1st_index * related_nodes) + 1), axis=1)
+        fi_T_i_S = np.sum((related_nodes * self.delta_c_am_milti_s_am) * ((self.burst_point_index * related_nodes) - (self.awakening_point_1st_index * related_nodes) + 1)[:, (self.subset_indicator == 1)], axis=1)
+        fi_T_i_V[fi_T_i_V == 0] = fi_T_i_S[fi_T_i_V == 0]
         beta = fi_T_i_S / fi_T_i_V
 
         # monetary suspiciousness
-        ita_S = np.sum((self.adj * self.subset_indicator) * self.value_array[0][self.search_mat])
+        ita_S = np.sum((self.adj[:, (self.subset_indicator == 1)]) @ self.value_array[0][self.search_mat])
         ita_V_n_S = np.sum(self.value_array[0][self.search_mat]) - ita_S + 1e-18
-        bal = np.min(ita_S / ita_V_n_S, ita_V_n_S / ita_S)
-        R_S_list = self.R_list[self.timeorder_datas_reverse_index_map[np.where(self.subset_indicator == 1)]]
-        R_V_n_S_list = self.R_list[self.timeorder_datas_reverse_index_map[np.where(self.subset_indicator == 0)]]
-        gamma = bal * stats.entropy(R_S_list, R_V_n_S_list)
+        try:
+            bal = np.min([ita_S / ita_V_n_S, ita_V_n_S / ita_S])
+        except Exception as e:
+            print(ita_S, ita_V_n_S)
+            raise e
+        R_S_list = self.R_list[np.where(self.subset_indicator == 1 & update_index_list_expand)]
+        R_V_n_S_list = self.R_list[np.where(self.subset_indicator == 0 & update_index_list_expand)]
+        if R_V_n_S_list.shape[0] <= 5:
+            gamma = np.ones_like(R_S_list)
+        else:
+            gamma = bal * stats.entropy(R_S_list, R_V_n_S_list)
 
         # suspiciousness fusion
-        self.suspiciousness[update_index_list] = np.sum(self.value_array[0][self.search_mat] * self.b ** (alpha + beta + gamma - 3), axis=1)
+        self.suspiciousness[update_index_list] = np.sum((related_nodes @ self.value_array[0][self.search_mat]) * (self.b ** (alpha + beta + gamma - 3)).reshape((-1, 1)), axis=1)
 
     def __str__(self):
         return str(vars(self))
